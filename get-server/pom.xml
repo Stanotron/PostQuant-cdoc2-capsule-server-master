@@ -1,0 +1,475 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<parent>
+		<groupId>org.springframework.boot</groupId>
+		<artifactId>spring-boot-starter-parent</artifactId>
+		<version>3.5.0</version>
+		<relativePath /> <!-- lookup parent from repository -->
+	</parent>
+
+	<artifactId>cdoc2-get-server</artifactId>
+	<groupId>ee.cyber.cdoc2</groupId>
+	<version>1.7.0</version>
+	<packaging>jar</packaging>
+
+	<name>cdoc2-get-server</name>
+	<description>CDOC2 server for getting key capsules</description>
+
+	<properties>
+		<java.version>17</java.version>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+		<tests>!(pkcs11 | slow)</tests>
+
+        <spring-boot.version>4.0.1</spring-boot.version>
+	</properties>
+
+	<profiles>
+		<profile>
+			<id>allTests</id>
+			<properties>
+				<!-- empty, means all tests-->
+				<tests />
+			</properties>
+		</profile>
+
+		<profile>
+			<id>excludePkcs11AndSlowTests</id>
+			<properties>
+				<tests>!(pkcs11 | slow)</tests>
+			</properties>
+		</profile>
+
+		<profile>
+			<id>no-maven.test.skip-defined</id>
+			<!-- remove test dependencies when maven.test.skip=true is defined -->
+			<!-- although maven.test.skip=true doesn't compile tests, maven still requires test dependencies -->
+			<activation>
+				<property>
+					<name>!maven.test.skip</name> <!-- Activates when maven.test.skip is NOT defined -->
+				</property>
+			</activation>
+			<dependencies>
+				<!-- cdoc2 dependencies required for compiling tests -->
+				<dependency>
+					<groupId>ee.cyber.cdoc2</groupId>
+					<artifactId>cdoc2-lib</artifactId>
+					<version>3.1.0</version>
+					<scope>test</scope>
+				</dependency>
+				<dependency>
+					<groupId>ee.cyber.cdoc2</groupId>
+					<artifactId>cdoc2-lib</artifactId>
+					<version>3.1.0</version>
+					<type>test-jar</type>
+					<scope>test</scope>
+				</dependency>
+				<dependency>
+					<groupId>ee.cyber.cdoc2</groupId>
+					<artifactId>cdoc2-common-server</artifactId>
+					<version>2.2.1</version>
+					<type>test-jar</type>
+					<scope>test</scope>
+				</dependency>
+			</dependencies>
+		</profile>
+
+
+		<profile>
+			<id>github_ci_fork</id>
+			<!-- for forks use base maven repo "open-eid/cdoc2-java-ref-impl" -->
+			<activation>
+				<property>
+					<!-- defined by maven.yml for forks only -->
+					<name>env.BASE_REPO</name>
+				</property>
+			</activation>
+			<properties>
+				<github_ci.maven_repo>https://maven.pkg.github.com/${env.BASE_REPO}</github_ci.maven_repo>
+			</properties>
+		</profile>
+
+		<profile>
+			<id>github_ci_not_fork_or_not_pull_request</id>
+			<activation>
+				<property>
+					<!-- set by maven.yml for forks only -->
+					<name>env.IS_FORK</name>
+					<!-- "is_fork" is not defined, or is defined with a value which is not "true". -->
+					<value>!true</value>
+				</property>
+			</activation>
+			<properties>
+				<!--suppress UnresolvedMavenProperty -->
+				<github_ci.maven_repo>https://maven.pkg.github.com/${env.GITHUB_REPOSITORY}</github_ci.maven_repo>
+			</properties>
+		</profile>
+
+		<profile>
+			<id>overwrite "github_ci.maven_repo" from env var "MAVEN_REPO"</id>
+			<activation>
+				<property>
+					<name>env.MAVEN_REPO</name>
+				</property>
+			</activation>
+			<properties>
+				<github_ci.maven_repo>https://maven.pkg.github.com/${env.MAVEN_REPO}</github_ci.maven_repo>
+			</properties>
+		</profile>
+
+
+		<profile>
+			<!-- activate github profile when run by github actions -->
+			<id>github_ci</id>
+			<activation>
+				<property>
+					<name>env.GITHUB_ACTIONS</name>
+					<value>true</value>
+				</property>
+			</activation>
+			<repositories>
+				<repository>
+					<!-- must have matching server.id in settings.xml -->
+					<!-- github actions/checkout default for server-id is "github"-->
+					<id>github</id>
+					<!-- When pulling, the package index is based on the organization level, not the repository level. -->
+					<!-- Although GITHUB_REPOSITORY contains repo, all organization packages are indexed there -->
+					<!-- https://stackoverflow.com/questions/63041402/github-packages-single-maven-repository-for-github-organization -->
+					<!--suppress UnresolvedMavenProperty -->
+					<url>${github_ci.maven_repo}</url>
+				</repository>
+
+			</repositories>
+			<distributionManagement>
+				<repository>
+					<id>github</id>
+					<!--suppress UnresolvedMavenProperty -->
+					<url>https://maven.pkg.github.com/${env.GITHUB_REPOSITORY}</url>
+				</repository>
+				<snapshotRepository>
+					<id>github</id>
+					<!--suppress UnresolvedMavenProperty -->
+					<url>https://maven.pkg.github.com/${env.GITHUB_REPOSITORY}</url>
+				</snapshotRepository>
+			</distributionManagement>
+
+		</profile>
+
+		<profile>
+			<!-- set gitlab.ext profile active when run by gitlab CI -->
+			<id>gitlab_ci</id>
+			<activation>
+				<property>
+					<name>env.GITLAB_CI</name>
+					<value>true</value>
+				</property>
+			</activation>
+			<!-- repositories are configured in settings.xml -->
+			<!--repositories></repositories-->
+
+			<distributionManagement>
+				<!-- env variables are available, when run by gitlab CI -->
+				<repository>
+					<id>${env.CI_SERVER_HOST}</id>
+					<!--suppress UnresolvedMavenProperty -->
+					<url>${env.CI_SERVER_URL}/api/v4/projects/${env.CI_PROJECT_ID}/packages/maven</url>
+				</repository>
+				<snapshotRepository>
+					<id>${env.CI_SERVER_HOST}</id>
+					<!--suppress UnresolvedMavenProperty -->
+					<url>${env.CI_SERVER_URL}/api/v4/projects/${env.CI_PROJECT_ID}/packages/maven</url>
+				</snapshotRepository>
+			</distributionManagement>
+		</profile>
+	</profiles>
+
+	<dependencies>
+		<dependency>
+			<groupId>ee.cyber.cdoc2</groupId>
+			<artifactId>cdoc2-shared-crypto</artifactId>
+			<version>0.3.0</version>
+		</dependency>
+
+		<dependency>
+			<groupId>ee.cyber.cdoc2</groupId>
+			<artifactId>cdoc2-common-server</artifactId>
+			<version>2.2.1</version>
+		</dependency>
+
+		<dependency>
+			<groupId>ee.cyber.cdoc2</groupId>
+			<artifactId>cdoc2-server-db</artifactId>
+			<version>2.2.2</version>
+		</dependency>
+
+		<dependency>
+			<groupId>ee.cyber.cdoc2</groupId>
+			<artifactId>cdoc2-server-openapi</artifactId>
+			<version>0.2.0</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter</artifactId>
+			<version>${spring-boot.version}</version>
+		</dependency>
+
+		<!-- metrics using micrometer -->
+		<dependency>
+			<groupId>io.micrometer</groupId>
+			<artifactId>micrometer-registry-prometheus</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+
+        <!-- Tracing -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-otel</artifactId>
+        </dependency>
+
+        <!-- OTLP exporter (Tempo, Jaeger, etc.) -->
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-otlp</artifactId>
+        </dependency>
+
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>postgresql</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.liquibase</groupId>
+			<artifactId>liquibase-core</artifactId>
+			<version>5.0.1</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.httpcomponents.client5</groupId>
+			<artifactId>httpclient5</artifactId>
+			<scope>test</scope>
+		</dependency>
+    </dependencies>
+
+	<build>
+		<resources>
+			<resource>
+				<directory>src/main/resources</directory>
+				<filtering>true</filtering>
+				<excludes>
+					<exclude>**/*</exclude>
+				</excludes>
+			</resource>
+		</resources>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-checkstyle-plugin</artifactId>
+				<version>3.5.0</version>
+
+				<configuration>
+					<configLocation>../checkstyle.xml</configLocation>
+					<suppressionsLocation>../checkstyle-suppressions.xml</suppressionsLocation>
+
+					<sourceDirectories>
+						<sourceDirectory>${project.build.sourceDirectory}</sourceDirectory>
+						<sourceDirectory>${project.build.testSourceDirectory}</sourceDirectory>
+					</sourceDirectories>
+
+					<consoleOutput>true</consoleOutput>
+
+					<failsOnError>true</failsOnError>
+					<failOnViolation>false</failOnViolation>
+
+					<linkXRef>false</linkXRef>
+				</configuration>
+				<executions>
+					<execution>
+						<goals>
+							<goal>check</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-resources-plugin</artifactId>
+				<version>3.3.1</version>
+				<executions>
+					<execution>
+						<id>copy-keys-and-certificates-to-test-resources</id>
+						<phase>generate-test-resources</phase>
+						<goals>
+							<goal>copy-resources</goal>
+						</goals>
+						<configuration>
+							<!--referenced from application-test.properties for running through IntelliJ-->
+							<outputDirectory>${basedir}/src/test/resources/keystore</outputDirectory>
+							<resources>
+								<resource>
+									<directory>${basedir}/../keys</directory>
+									<includes>
+										<include>servertruststore.jks</include>
+										<include>cdoc2server.p12</include>
+									</includes>
+								</resource>
+							</resources>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-antrun-plugin</artifactId>
+				<version>3.1.0</version>
+				<executions>
+					<execution>
+						<id>clean</id>
+						<phase>clean</phase>
+						<goals>
+							<goal>run</goal>
+						</goals>
+						<configuration>
+							<target>
+								<delete file="${basedir}/src/test/resources/test.properties" />
+								<delete file="${basedir}/src/test/resources/keystore/servertruststore.jks" />
+								<delete file="${basedir}/src/test/resources/keystore/cdoc2server.p12" />
+							</target>
+						</configuration>
+					</execution>
+					<execution>
+						<id>generate-test.properties</id>
+						<phase>generate-test-resources</phase>
+						<goals>
+							<goal>run</goal>
+						</goals>
+						<configuration>
+							<target>
+								<!-- create properties file for tests -->
+								<echo file="${basedir}/src/test/resources/test.properties" append="false">cdoc2.keys.dir=${basedir}/../keys
+								</echo>
+							</target>
+						</configuration>
+					</execution>
+
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<version>3.5.0</version>
+				<configuration>
+					<trimStackTrace>false</trimStackTrace>
+					<groups>${tests}</groups>
+					<!--suppress UnresolvedMavenProperty -->
+					<argLine>${argLine}</argLine>
+				</configuration>
+			</plugin>
+
+			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>0.8.12</version>
+				<executions>
+					<execution>
+						<id>prepare-agent</id>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+					</execution>
+					<execution>
+						<phase>test</phase>
+						<goals>
+							<goal>report</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!-- generate build info -->
+			<plugin>
+				<groupId>org.springframework.boot</groupId>
+				<artifactId>spring-boot-maven-plugin</artifactId>
+				<version>${spring-boot.version}</version>
+				<configuration>
+					<image>
+						<env>
+							<!-- use  spring.threads.virtual.enabled=true in application.properties -->
+							<!-- to take advantage of Java 21 virtual threads -->
+							<BP_JVM_VERSION>21</BP_JVM_VERSION>
+							<BP_SPRING_CLOUD_BINDINGS_DISABLED>true</BP_SPRING_CLOUD_BINDINGS_DISABLED>
+							<!--suppress UnresolvedMavenProperty -->
+							<BP_DEPENDENCY_MIRROR>${bp.dependency.mirror}</BP_DEPENDENCY_MIRROR>
+							<BPL_SPRING_CLOUD_BINDINGS_DISABLED>true</BPL_SPRING_CLOUD_BINDINGS_DISABLED>
+						</env>
+						<!--suppress UnresolvedMavenProperty -->
+						<tags>${spring-boot.build-image.tags}</tags>
+					</image>
+					<docker>
+						<publishRegistry>
+							<!--suppress UnresolvedMavenProperty -->
+							<url>${docker.publishRegistry.url}</url>
+							<!--suppress UnresolvedMavenProperty -->
+							<username>${docker.publishRegistry.username}</username>
+							<!--suppress UnresolvedMavenProperty -->
+							<password>${docker.publishRegistry.password}</password>
+						</publishRegistry>
+					</docker>
+				</configuration>
+				<executions>
+					<execution>
+						<goals>
+							<goal>build-info</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!-- if exact RELEASE version of module already exists, -->
+			<!-- then skip deployment by setting maven.deploy.skip=true property for that module -->
+			<!-- GitHub doesn't allow overwriting existing RELEASE modules and deploy will fail with HTTP 409 -->
+			<plugin>
+				<groupId>org.honton.chas</groupId>
+				<artifactId>exists-maven-plugin</artifactId>
+				<version>0.13.0</version>
+				<executions>
+					<execution>
+						<phase>install</phase>
+						<goals>
+							<goal>remote</goal>
+						</goals>
+						<configuration>
+							<!-- run only if deploy goal is specified in maven command line -->
+							<requireGoal>deploy</requireGoal>
+						</configuration>
+					</execution>
+				</executions>
+				<configuration>
+					<failIfNotMatch>false</failIfNotMatch>
+					<userProperty>false</userProperty>
+					<!--skip>true</skip-->
+				</configuration>
+			</plugin>
+
+		</plugins>
+	</build>
+</project>

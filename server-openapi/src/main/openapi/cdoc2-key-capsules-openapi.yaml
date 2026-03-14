@@ -1,0 +1,88 @@
+openapi: 3.0.3
+info:
+  title: CDOC2 Key Capsules API
+  version: 3.0.0-pq-local
+
+paths:
+  /key-capsules:
+    post:
+      operationId: createCapsule
+      parameters:
+        - in: header
+          name: x-expiry-time
+          required: false
+          schema:
+            type: string
+            format: date-time
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Capsule'
+      responses:
+        '201':
+          description: Created
+        '400':
+          description: Bad Request
+        '500':
+          description: Internal Server Error
+
+  /key-capsules/{transactionId}:
+    get:
+      operationId: getCapsuleByTransactionId
+      parameters:
+        - in: path
+          name: transactionId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          headers:
+            x-expiry-time:
+              schema:
+                type: string
+                format: date-time
+            x-expiry-time-adjusted:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capsule'
+        '401':
+          description: Unauthorized
+        '404':
+          description: Not Found
+        '405':
+          description: Method Not Allowed
+
+components:
+  schemas:
+    Capsule:
+      type: object
+      required:
+        - capsuleType
+        - recipientId
+        - ephemeralKeyMaterial
+      properties:
+        capsuleType:
+          type: string
+          enum:
+            - ECC_SECP384R1
+            - ECC_SECP256R1
+            - RSA
+            - MLKEM768
+          x-enum-varnames:
+            - ECC_SECP384R1
+            - ECC_SECP256R1
+            - RSA
+            - MLKEM768
+        recipientId:
+          type: string
+          format: byte
+        ephemeralKeyMaterial:
+          type: string
+          format: byte

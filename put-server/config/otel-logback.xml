@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <property name="SERVICE_NAME" value="put-server"/>
+
+    <!-- Console appender with OTel JSON format -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <customFields>{"service.name":"${SERVICE_NAME}"}</customFields>
+            <fieldNames>
+                <timestamp>Timestamp</timestamp>
+                <message>Body</message>
+                <logger>Resource.service.name</logger>
+                <level>SeverityText</level>
+                <levelValue>SeverityNumber</levelValue>
+            </fieldNames>
+            <includeMdcKeyName>traceId</includeMdcKeyName>
+            <includeMdcKeyName>spanId</includeMdcKeyName>
+            <includeMdcKeyName>traceFlags</includeMdcKeyName>
+            <includeMdcKeyName>sampled</includeMdcKeyName>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>

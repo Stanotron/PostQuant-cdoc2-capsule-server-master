@@ -1,0 +1,161 @@
+variables:
+  DOCKER_TLS_CERTDIR: ""
+  DOCKER_HOST: "tcp://docker:2375"
+
+.publish-component: &publish-component
+  stage: publish
+  image:
+    name: gcr.io/kaniko-project/executor:v1.22.0-debug
+    entrypoint: [""]
+  tags:
+    - dind
+  rules:
+# TODO: Building from Dockerfile is deprecated, use buildpacks instead, see build-images.sh
+#    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+#      when: on_success
+#    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+#      when: on_success
+    - when: never
+  script:
+    - |
+      if [[ "$CI_COMMIT_BRANCH" == "$CI_DEFAULT_BRANCH" ]]; then
+      /kaniko/executor \
+        --context $CI_PROJECT_DIR \
+        --build-arg NAME=${COMPONENT} \
+        --build-arg http_proxy=$http_proxy \
+        --build-arg https_proxy=$https_proxy \
+        --dockerfile $CI_PROJECT_DIR/${COMPONENT}/docker/Dockerfile \
+        --destination $DOCKER_IMAGE_NAME:latest \
+        --destination $DOCKER_IMAGE_NAME:$CI_COMMIT_REF_SLUG \
+        --cache
+      else
+      /kaniko/executor \
+        --context $CI_PROJECT_DIR \
+        --build-arg NAME=${COMPONENT} \
+        --build-arg http_proxy=$http_proxy \
+        --build-arg https_proxy=$https_proxy \
+        --dockerfile $CI_PROJECT_DIR/${COMPONENT}/docker/Dockerfile \
+        --destination $DOCKER_IMAGE_NAME:$CI_COMMIT_REF_SLUG \
+        --cache
+      fi
+
+stages:
+  - test
+  - coverage
+  - build
+  - publish
+
+test:
+  stage: test
+  image: maven:3.8.8-eclipse-temurin-17
+  services:
+    - name: docker:25.0.3-dind
+      alias: docker
+  tags:
+    - dind
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: on_success
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
+    - when: never
+  script:
+    - cat $MAVEN_SETTINGS
+    - mvn clean verify -s $MAVEN_SETTINGS -Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository
+    - shopt -s globstar
+    - awk -F"," '{ instructions += $4 + $5; covered += $5 } END { print covered, "/", instructions, " instructions covered"; print "Total", 100*covered/instructions, "% covered" }' /builds/**/target/site/jacoco/jacoco.csv
+  coverage: /Total \d+\.\d+ %/
+  artifacts:
+    when: always
+    reports:
+      junit:
+        - "**/target/surefire-reports/*.xml"
+    paths:
+      - "**/target/site/jacoco"
+  cache: 
+    key: "$CI_COMMIT_REF_NAME"
+    paths:
+      - .m2/repository
+
+coverage:
+  stage: coverage
+  image: mcr.microsoft.com/dotnet/sdk:8.0
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: on_success
+    - when: never
+  script:
+    - export PATH="$PATH:/root/.dotnet/tools"
+    - dotnet tool restore
+    - dotnet tool install dotnet-reportgenerator-globaltool --global
+    - |
+      for src in $(find /builds -type f -name 'jacoco.xml' | sed -r 's|/target/site/jacoco/[^/]+$||' |  sort -u )
+      do
+        sourcedirs="$src/src/main/java/"
+        for i in $(find $src -type f -name '*.java' | sed -r 's|/[^/]+$||' |sort -u)
+        do
+          sourcedirs="${sourcedirs};${i}"
+        done
+        reportgenerator \
+        -reports:$src/**/jacoco.xml \
+        -targetdir:$src/target/reports \
+        -reporttypes:Cobertura \
+        -sourcedirs:$sourcedirs
+        sed -i 's|filename=\"'"$src"'/src/main/java/|filename=\"|g' $src/target/reports/Cobertura.xml
+      done
+  artifacts:
+    paths:
+      - "$CI_PROJECT_DIR/**/Cobertura.xml"
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: "$CI_PROJECT_DIR/**/Cobertura.xml"
+
+build-components:
+  stage: build
+  image: maven:3.8.8-eclipse-temurin-17
+  script:
+    - mvn clean install -s $MAVEN_SETTINGS -DskipTests -Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository
+  cache: 
+    key: "$CI_COMMIT_REF_NAME"
+    paths:
+      - .m2/repository
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: on_success
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
+    - when: never
+  artifacts:
+    paths:
+      - ./**/target/*.jar
+
+publish:maven: 
+  stage: publish
+  image: maven:3.8.8-eclipse-temurin-17
+  script:
+    - cat $MAVEN_SETTINGS
+    - mvn clean deploy -s $MAVEN_SETTINGS -DskipTests -Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository
+  cache: 
+    key: "$CI_COMMIT_REF_NAME"
+    paths:
+      - .m2/repository
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
+    - if: '$CI_COMMIT_TAG =~ /^.*deploy.*$/'
+    - when: never
+
+publish:get-server:
+  variables:
+    COMPONENT: get-server
+    DOCKER_IMAGE_NAME: $DOCKER_REGISTRY/${COMPONENT}
+  extends:
+    - .publish-component
+
+publish:put-server:
+  variables:
+    COMPONENT: put-server
+    DOCKER_IMAGE_NAME: $DOCKER_REGISTRY/${COMPONENT}
+  extends:
+    - .publish-component

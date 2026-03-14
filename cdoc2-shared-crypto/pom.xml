@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>ee.cyber.cdoc2</groupId>
+    <artifactId>cdoc2-shared-crypto</artifactId>
+    <version>0.3.0</version>
+    <description>CDOC2 common crypto functions shared between lib and server</description>
+    <packaging>jar</packaging>
+
+    <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+
+        <bouncycastle.version>1.81</bouncycastle.version>
+        <logback.version>1.5.18</logback.version>
+    </properties>
+
+    <profiles>
+        <profile>
+            <!-- activate github profile when run by github actions -->
+            <id>github_ci</id>
+            <activation>
+                <property>
+                    <name>env.GITHUB_ACTIONS</name>
+                    <value>true</value>
+                </property>
+            </activation>
+
+            <distributionManagement>
+                <repository>
+                    <id>github</id> <!-- must match server.id in settings.xml -->
+                    <!--suppress UnresolvedMavenProperty -->
+                    <url>https://maven.pkg.github.com/${env.GITHUB_REPOSITORY}</url>
+                </repository>
+            </distributionManagement>
+        </profile>
+
+        <profile>
+            <!-- set gitlab profile active when run by gitlab CI -->
+            <id>gitlab_ci</id>
+            <activation>
+                <property>
+                    <name>env.GITLAB_CI</name>
+                    <value>true</value>
+                </property>
+            </activation>
+
+            <distributionManagement>
+                <!-- env variables are available, when run by gitlab CI -->
+                <repository>
+                    <id>${env.CI_SERVER_HOST}</id>
+                    <!--suppress UnresolvedMavenProperty -->
+                    <url>${env.CI_SERVER_URL}/api/v4/projects/${env.CI_PROJECT_ID}/packages/maven</url>
+                </repository>
+                <snapshotRepository>
+                    <id>${env.CI_SERVER_HOST}</id>
+                    <!--suppress UnresolvedMavenProperty -->
+                    <url>${env.CI_SERVER_URL}/api/v4/projects/${env.CI_PROJECT_ID}/packages/maven</url>
+                </snapshotRepository>
+            </distributionManagement>
+        </profile>
+    </profiles>
+
+    <dependencies>
+
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>${logback.version}</version>
+        </dependency>
+
+        <!-- bc.jar 5.6MB -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpkix-jdk18on</artifactId>
+            <version>${bouncycastle.version}</version>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- if exact RELEASE version of module already exists, -->
+            <!-- then skip deployment by setting maven.deploy.skip=true property for that module -->
+            <!-- GitHub doesn't allow overwriting existing RELEASE modules and deploy will fail with HTTP 409 -->
+            <plugin>
+                <groupId>org.honton.chas</groupId>
+                <artifactId>exists-maven-plugin</artifactId>
+                <version>0.13.0</version>
+                <executions>
+                    <execution>
+                        <phase>install</phase>
+                        <goals>
+                            <goal>remote</goal>
+                        </goals>
+                        <configuration>
+                            <!-- run only if deploy goal is specified in maven command line -->
+                            <requireGoal>deploy</requireGoal>
+                        </configuration>
+                    </execution>
+                </executions>
+                <configuration>
+                    <failIfNotMatch>false</failIfNotMatch>
+                    <userProperty>true</userProperty>
+                    <!--skip>true</skip-->
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <version>3.1.3</version>
+            </plugin>
+
+
+        </plugins>
+    </build>
+
+</project>
