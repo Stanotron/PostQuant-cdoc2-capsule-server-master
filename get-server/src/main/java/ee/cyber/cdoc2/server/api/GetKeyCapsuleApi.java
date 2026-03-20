@@ -10,7 +10,6 @@ import ee.cyber.cdoc2.server.generated.model.Capsule;
 import ee.cyber.cdoc2.server.generated.api.KeyCapsulesApi;
 import ee.cyber.cdoc2.server.generated.api.KeyCapsulesApiDelegate;
 
-
 import java.security.GeneralSecurityException;
 import java.security.PublicKey;
 import java.security.cert.X509Certificate;
@@ -86,24 +85,26 @@ public class GetKeyCapsuleApi implements KeyCapsulesApiDelegate {
         return new ResponseEntity<>(HttpStatus.METHOD_NOT_ALLOWED);
     }
 
-    private static boolean isRecipient(PublicKey publicKey, KeyCapsuleDb capsule) {
+    private static boolean isRecipient(PublicKey publicKey, KeyCapsuleDb capsule) {             // pq change
         try {
             if (KeyAlgorithm.isEcKeysAlgorithm(publicKey.getAlgorithm())
-                && publicKey instanceof ECPublicKey ecPublicKey) {
+                    && publicKey instanceof ECPublicKey ecPublicKey) {
 
                 KeyCapsuleDb.CapsuleType type = capsule.getCapsuleType();
 
-                boolean curveMatches =
-                    (type == KeyCapsuleDb.CapsuleType.SECP384R1 && ECKeys.isEcSecp384r1Curve(ecPublicKey))
-                        || (type == KeyCapsuleDb.CapsuleType.SECP256R1 && ECKeys.isEcSecp256r1Curve(ecPublicKey));
+                boolean ecAuthCapsule =
+                        type == KeyCapsuleDb.CapsuleType.SECP384R1
+                                || type == KeyCapsuleDb.CapsuleType.SECP256R1
+                                || type == KeyCapsuleDb.CapsuleType.MLKEM768;
 
-                if (curveMatches) {
+                if (ecAuthCapsule) {
                     return Arrays.equals(
-                        capsule.getRecipient(),
-                        ECKeys.encodeEcPubKeyForTls(ecPublicKey)
+                            capsule.getRecipient(),
+                            ECKeys.encodeEcPubKeyForTls(ecPublicKey)
                     );
                 }
             }
+
             if (capsule.getCapsuleType() == KeyCapsuleDb.CapsuleType.RSA
                     && KeyAlgorithm.isRsaKeysAlgorithm(publicKey.getAlgorithm())) {
                 return Arrays.equals(capsule.getRecipient(), RsaUtils.encodeRsaPubKey((RSAPublicKey) publicKey));
