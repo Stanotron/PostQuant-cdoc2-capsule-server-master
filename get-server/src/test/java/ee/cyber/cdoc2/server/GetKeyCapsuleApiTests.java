@@ -51,8 +51,18 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestClient;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.client.RestClientResponseException;
-
 import static org.junit.jupiter.api.Assertions.*;
+
+import java.nio.charset.StandardCharsets;
+import java.security.Security;
+import java.security.Signature;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.security.KeyPairGenerator;
+import java.security.MessageDigest;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.jcajce.spec.MLDSAParameterSpec;
+
 
 
 @Slf4j
@@ -65,6 +75,157 @@ class GetKeyCapsuleApiTests extends KeyCapsuleIntegrationTest {
     @Qualifier("trustAllWithClientAuth")
     @Autowired
     private RestClient restClient;
+
+    @Test
+    void shouldGetMlKemCapsuleWithValidPqHeaders() throws Exception {
+        KeyPair mlDsaKeyPair = generateMlDsaKeyPair();
+
+        byte[] recipientMldsaPublicKey = mlDsaKeyPair.getPublic().getEncoded();
+        byte[] recipientId = sha256(recipientMldsaPublicKey);
+        byte[] ciphertext = UUID.randomUUID().toString().getBytes(StandardCharsets.UTF_8);
+
+        var capsule = new Capsule()
+                .capsuleType(Capsule.CapsuleTypeEnum.MLKEM768)
+                .recipientId(recipientId)
+                .recipientMldsaPublicKey(recipientMldsaPublicKey)
+                .ephemeralKeyMaterial(ciphertext);
+
+        String txId = this.saveCapsule(capsule, EXPIRY_TIME).getTransactionId();
+
+        String recipientIdHeader = Base64.getEncoder().encodeToString(recipientId);
+        String timestampHeader = OffsetDateTime.now(ZoneOffset.UTC).toString();
+        String messageToSign = txId + "|" + recipientIdHeader + "|" + timestampHeader;
+        String signatureHeader = Base64.getEncoder().encodeToString(signMlDsa(mlDsaKeyPair, messageToSign));
+
+        ResponseEntity<Capsule> response = this.restClient
+                .get()
+                .uri(this.capsuleApiUrl() + "/" + txId)
+                .header("X-Recipient-Id", recipientIdHeader)
+                .header("X-Timestamp", timestampHeader)
+                .header("X-Signature", signatureHeader)
+                .retrieve()
+                .toEntity(Capsule.class);
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+
+        assertEquals(Capsule.CapsuleTypeEnum.MLKEM768, response.getBody().getCapsuleType());
+        assertArrayEquals(recipientId, response.getBody().getRecipientId());
+        assertArrayEquals(recipientMldsaPublicKey, response.getBody().getRecipientMldsaPublicKey());
+        assertArrayEquals(ciphertext, response.getBody().getEphemeralKeyMaterial());
+    }
+
+    @Test
+    void shouldRejectMlKemCapsuleWithStaleTimestamp() throws Exception {
+        KeyPair mlDsaKeyPair = generateMlDsaKeyPair();
+
+        byte[] recipientMldsaPublicKey = mlDsaKeyPair.getPublic().getEncoded();
+        byte[] recipientId = sha256(recipientMldsaPublicKey);
+        byte[] ciphertext = UUID.randomUUID().toString().getBytes(StandardCharsets.UTF_8);
+
+        var capsule = new Capsule()
+                .capsuleType(Capsule.CapsuleTypeEnum.MLKEM768)
+                .recipientId(recipientId)
+                .recipientMldsaPublicKey(recipientMldsaPublicKey)
+                .ephemeralKeyMaterial(ciphertext);
+
+        String txId = this.saveCapsule(capsule, EXPIRY_TIME).getTransactionId();
+
+        String recipientIdHeader = Base64.getEncoder().encodeToString(recipientId);
+        String timestampHeader = OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(10).toString();
+        String messageToSign = txId + "|" + recipientIdHeader + "|" + timestampHeader;
+        String signatureHeader = Base64.getEncoder().encodeToString(signMlDsa(mlDsaKeyPair, messageToSign));
+
+        RestClientResponseException ex = assertThrows(
+                RestClientResponseException.class,
+                () -> this.restClient
+                        .get()
+                        .uri(this.capsuleApiUrl() + "/" + txId)
+                        .header("X-Recipient-Id", recipientIdHeader)
+                        .header("X-Timestamp", timestampHeader)
+                        .header("X-Signature", signatureHeader)
+                        .retrieve()
+                        .toEntity(Capsule.class)
+        );
+
+        assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatusCode());
+    }
+
+    @Test
+    void shouldRejectMlKemCapsuleWithBadSignature() throws Exception {
+        KeyPair mlDsaKeyPair = generateMlDsaKeyPair();
+
+        byte[] recipientMldsaPublicKey = mlDsaKeyPair.getPublic().getEncoded();
+        byte[] recipientId = sha256(recipientMldsaPublicKey);
+        byte[] ciphertext = UUID.randomUUID().toString().getBytes(StandardCharsets.UTF_8);
+
+        var capsule = new Capsule()
+                .capsuleType(Capsule.CapsuleTypeEnum.MLKEM768)
+                .recipientId(recipientId)
+                .recipientMldsaPublicKey(recipientMldsaPublicKey)
+                .ephemeralKeyMaterial(ciphertext);
+
+        String txId = this.saveCapsule(capsule, EXPIRY_TIME).getTransactionId();
+
+        String recipientIdHeader = Base64.getEncoder().encodeToString(recipientId);
+        String timestampHeader = OffsetDateTime.now(ZoneOffset.UTC).toString();
+
+        KeyPair wrongKeyPair = generateMlDsaKeyPair();
+        String messageToSign = txId + "|" + recipientIdHeader + "|" + timestampHeader;
+        String signatureHeader = Base64.getEncoder().encodeToString(signMlDsa(wrongKeyPair, messageToSign));
+
+        RestClientResponseException ex = assertThrows(
+                RestClientResponseException.class,
+                () -> this.restClient
+                        .get()
+                        .uri(this.capsuleApiUrl() + "/" + txId)
+                        .header("X-Recipient-Id", recipientIdHeader)
+                        .header("X-Timestamp", timestampHeader)
+                        .header("X-Signature", signatureHeader)
+                        .retrieve()
+                        .toEntity(Capsule.class)
+        );
+
+        assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatusCode());
+    }
+
+    @Test
+    void shouldRejectMlKemCapsuleWithWrongRecipientId() throws Exception {
+        KeyPair mlDsaKeyPair = generateMlDsaKeyPair();
+
+        byte[] recipientMldsaPublicKey = mlDsaKeyPair.getPublic().getEncoded();
+        byte[] recipientId = sha256(recipientMldsaPublicKey);
+        byte[] ciphertext = UUID.randomUUID().toString().getBytes(StandardCharsets.UTF_8);
+
+        var capsule = new Capsule()
+                .capsuleType(Capsule.CapsuleTypeEnum.MLKEM768)
+                .recipientId(recipientId)
+                .recipientMldsaPublicKey(recipientMldsaPublicKey)
+                .ephemeralKeyMaterial(ciphertext);
+
+        String txId = this.saveCapsule(capsule, EXPIRY_TIME).getTransactionId();
+
+        byte[] wrongRecipientId = sha256("wrong-recipient".getBytes(StandardCharsets.UTF_8));
+        String recipientIdHeader = Base64.getEncoder().encodeToString(wrongRecipientId);
+        String timestampHeader = OffsetDateTime.now(ZoneOffset.UTC).toString();
+        String messageToSign = txId + "|" + recipientIdHeader + "|" + timestampHeader;
+        String signatureHeader = Base64.getEncoder().encodeToString(signMlDsa(mlDsaKeyPair, messageToSign));
+
+        RestClientResponseException ex = assertThrows(
+                RestClientResponseException.class,
+                () -> this.restClient
+                        .get()
+                        .uri(this.capsuleApiUrl() + "/" + txId)
+                        .header("X-Recipient-Id", recipientIdHeader)
+                        .header("X-Timestamp", timestampHeader)
+                        .header("X-Signature", signatureHeader)
+                        .retrieve()
+                        .toEntity(Capsule.class)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+    }
 
     @Test
     void testPKCS12Client() throws Exception {
@@ -472,6 +633,40 @@ class GetKeyCapsuleApiTests extends KeyCapsuleIntegrationTest {
         // then the following code will throw InvalidNameException
         new LdapName(censoredSubjectNameStr);
     }
+
+
+
+    private static final String BC = "BC";
+
+    static {
+        if (Security.getProvider(BC) == null) {
+            Security.addProvider(new BouncyCastleProvider());
+        }
+    }
+
+    private static KeyPair generateMlDsaKeyPair() throws Exception {
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("MLDSA", BC);
+        kpg.initialize(MLDSAParameterSpec.ml_dsa_65);
+        return kpg.generateKeyPair();
+    }
+
+    private static byte[] sha256(byte[] input) throws Exception {
+        MessageDigest md = MessageDigest.getInstance("SHA-256");
+        return md.digest(input);
+    }
+
+    private static byte[] signMlDsa(KeyPair keyPair, String message) throws Exception {
+        Signature signer = Signature.getInstance("MLDSA", BC);
+        signer.initSign(keyPair.getPrivate());
+        signer.update(message.getBytes(StandardCharsets.UTF_8));
+        return signer.sign();
+    }
+
+
+
+
+
+
 
     private static KeyCapsuleClientImpl createPkcs12ServerClient(String serverBaseUrl) throws Exception {
         String prop = "cdoc2.client.server.id=testKeyServerPropertiesClientPKCS12\n";

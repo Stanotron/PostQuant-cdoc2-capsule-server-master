@@ -33,6 +33,7 @@ abstract class KeyCapsuleIntegrationTest extends BaseInitializationTest {
 
         model.setCapsuleType(KeyCapsuleDb.CapsuleType.SECP384R1);
         model.setPayload("123".getBytes());
+        model.setRecipientMldsaPublicKey("456".getBytes());              // pq change
         model.setRecipient(null);
 
         Throwable cause = assertThrows(Throwable.class, () -> this.capsuleRepository.save(model));
@@ -48,7 +49,9 @@ abstract class KeyCapsuleIntegrationTest extends BaseInitializationTest {
         model.setCapsuleType(KeyCapsuleDb.CapsuleType.SECP384R1);
 
         model.setRecipient("123".getBytes());
+        model.setRecipientMldsaPublicKey("mldsa-pub".getBytes());           // pq change
         model.setPayload("345".getBytes());
+
         model.setExpiryTime(EXPIRY_TIME);
         model.setExpiryTimeAdjusted(EXPIRY_TIME_ADJUSTED);
         KeyCapsuleDb saved = this.capsuleRepository.save(model);
@@ -79,6 +82,7 @@ abstract class KeyCapsuleIntegrationTest extends BaseInitializationTest {
         model.setCapsuleType(KeyCapsuleDb.CapsuleType.SECP384R1);
 
         model.setRecipient("123".getBytes());
+        model.setRecipientMldsaPublicKey("mldsa-pub".getBytes());                   // pq change
         model.setPayload("345".getBytes());
         model.setExpiryTime(expiryTime);
         model.setExpiryTimeAdjusted(false);
@@ -96,18 +100,38 @@ abstract class KeyCapsuleIntegrationTest extends BaseInitializationTest {
      * @param dto the capsule dto
      * @return the saved capsule
      */
+//    protected KeyCapsuleDb saveCapsule(Capsule dto, Instant expiryTime) {
+//        return this.capsuleRepository.save(
+//            new KeyCapsuleDb()
+//                .setCapsuleType(
+//                    dto.getCapsuleType() == Capsule.CapsuleTypeEnum.ECC_SECP384R1
+//                        ? KeyCapsuleDb.CapsuleType.SECP384R1
+//                        : KeyCapsuleDb.CapsuleType.RSA
+//                )
+//                .setRecipient(dto.getRecipientId())
+//                .setPayload(dto.getEphemeralKeyMaterial())
+//                .setExpiryTime(expiryTime)
+//                .setExpiryTimeAdjusted(false)
+//        );
+//    }
+
     protected KeyCapsuleDb saveCapsule(Capsule dto, Instant expiryTime) {
+        KeyCapsuleDb.CapsuleType capsuleType = switch (dto.getCapsuleType()) {
+            case ECC_SECP384R1 -> KeyCapsuleDb.CapsuleType.SECP384R1;
+            case ECC_SECP256R1 -> KeyCapsuleDb.CapsuleType.SECP256R1;
+            case RSA -> KeyCapsuleDb.CapsuleType.RSA;
+            case MLKEM768 -> KeyCapsuleDb.CapsuleType.MLKEM768;
+            default -> throw new IllegalArgumentException("Unsupported capsule type: " + dto.getCapsuleType());
+        };
+
         return this.capsuleRepository.save(
-            new KeyCapsuleDb()
-                .setCapsuleType(
-                    dto.getCapsuleType() == Capsule.CapsuleTypeEnum.ECC_SECP384R1
-                        ? KeyCapsuleDb.CapsuleType.SECP384R1
-                        : KeyCapsuleDb.CapsuleType.RSA
-                )
-                .setRecipient(dto.getRecipientId())
-                .setPayload(dto.getEphemeralKeyMaterial())
-                .setExpiryTime(expiryTime)
-                .setExpiryTimeAdjusted(false)
+                new KeyCapsuleDb()
+                        .setCapsuleType(capsuleType)
+                        .setRecipient(dto.getRecipientId())
+                        .setRecipientMldsaPublicKey(dto.getRecipientMldsaPublicKey())
+                        .setPayload(dto.getEphemeralKeyMaterial())
+                        .setExpiryTime(expiryTime)
+                        .setExpiryTimeAdjusted(false)
         );
     }
 

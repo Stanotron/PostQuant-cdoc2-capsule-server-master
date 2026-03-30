@@ -50,12 +50,16 @@ public class CreateKeyCapsuleApi implements KeyCapsulesApiDelegate {
 
     @Override
     public ResponseEntity<Void> createCapsule(
-        Capsule capsule,
-        @Nullable LocalDateTime xExpiryTime
+            Capsule capsule,
+            @Nullable LocalDateTime xExpiryTime
     ) {
-        log.trace("createCapsule(type={}, recipientId={} bytes, ephemeralKey={} bytes)",
-            capsule.getCapsuleType(), capsule.getRecipientId().length,
-            capsule.getEphemeralKeyMaterial().length
+        log.trace(
+                "createCapsule(type={}, recipientId={} bytes, "
+                        + "recipientMldsaPublicKey={} bytes, ephemeralKey={} bytes)",
+                capsule.getCapsuleType(),
+                capsule.getRecipientId() == null ? 0 : capsule.getRecipientId().length,
+                capsule.getRecipientMldsaPublicKey() == null ? 0 : capsule.getRecipientMldsaPublicKey().length,
+                capsule.getEphemeralKeyMaterial() == null ? 0 : capsule.getEphemeralKeyMaterial().length
         );
 
         if (!CapsuleValidator.isValid(capsule)) {
@@ -66,39 +70,52 @@ public class CreateKeyCapsuleApi implements KeyCapsulesApiDelegate {
 
         try {
             var saved = this.keyCapsuleRepository.save(
-                new KeyCapsuleDb()
-                    .setCapsuleType(getDbCapsuleType(capsule.getCapsuleType()))
-                    .setRecipient(capsule.getRecipientId())
-                    .setPayload(capsule.getEphemeralKeyMaterial())
-                    .setExpiryTime(expiryTimeData.xExpiryTime.toInstant())
-                    .setExpiryTimeAdjusted(expiryTimeData.expiryTimeAdjusted)
+                    new KeyCapsuleDb()
+                            .setCapsuleType(getDbCapsuleType(capsule.getCapsuleType()))
+                            .setRecipient(capsule.getRecipientId())
+                            .setRecipientMldsaPublicKey(capsule.getRecipientMldsaPublicKey())
+                            .setPayload(capsule.getEphemeralKeyMaterial())
+                            .setExpiryTime(expiryTimeData.xExpiryTime.toInstant())
+                            .setExpiryTimeAdjusted(expiryTimeData.expiryTimeAdjusted)
             );
 
             log.info(
-                "Capsule(transactionId={}, type={}) created",
-                saved.getTransactionId(), saved.getCapsuleType()
+                    "Capsule(transactionId={}, type={}) created",
+                    saved.getTransactionId(), saved.getCapsuleType()
             );
 
             URI created = getResourceLocation(saved.getTransactionId());
 
             return ResponseEntity
-                .created(created)
-                .header(Constants.X_EXPIRY_TIME_HEADER, DateTimeFormatter.ISO_INSTANT.format(saved.getExpiryTime()))
-                .build();
+                    .created(created)
+                    .header(
+                            Constants.X_EXPIRY_TIME_HEADER,
+                            DateTimeFormatter.ISO_INSTANT.format(saved.getExpiryTime())
+                    )
+                    .build();
         } catch (Exception e) {
             log.error(
-                "Failed to save key capsule(type={}, recipient={}, payloadLength={})",
-                capsule.getCapsuleType(),
-                Base64.getEncoder().encodeToString(capsule.getRecipientId()),
-                capsule.getEphemeralKeyMaterial().length,
-                e
+                    "Failed to save key capsule(type={}, recipient={}, "
+                            + "recipientMldsaPublicKeyLength={}, payloadLength={})",
+                    capsule.getCapsuleType(),
+                    capsule.getRecipientId() == null
+                            ? "null"
+                            : Base64.getEncoder().encodeToString(capsule.getRecipientId()),
+                    capsule.getRecipientMldsaPublicKey() == null ? 0 : capsule.getRecipientMldsaPublicKey().length,
+                    capsule.getEphemeralKeyMaterial() == null ? 0 : capsule.getEphemeralKeyMaterial().length,
+                    e
             );
             return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
 
     @Override
-    public ResponseEntity<Capsule> getCapsuleByTransactionId(String transactionId) {
+    public ResponseEntity<Capsule> getCapsuleByTransactionId(
+            String transactionId,
+            String xRecipientId,
+            String xTimestamp,
+            String xSignature
+    ) {
         log.error("getCapsuleByTransactionId() operation not supported on key capsule put server");
         return new ResponseEntity<>(HttpStatus.METHOD_NOT_ALLOWED);
     }
@@ -111,7 +128,9 @@ public class CreateKeyCapsuleApi implements KeyCapsulesApiDelegate {
      */
     private static URI getResourceLocation(String id) throws URISyntaxException {
         return getPathAndQueryPart(
-            linkTo(methodOn(KeyCapsulesApiController.class).getCapsuleByTransactionId(id)).toUri()
+                linkTo(methodOn(KeyCapsulesApiController.class)
+                        .getCapsuleByTransactionId(id, "test", "test", "test"))
+                        .toUri()
         );
     }
 
@@ -120,7 +139,7 @@ public class CreateKeyCapsuleApi implements KeyCapsulesApiDelegate {
             case ECC_SECP384R1 -> KeyCapsuleDb.CapsuleType.SECP384R1;
             case ECC_SECP256R1 -> KeyCapsuleDb.CapsuleType.SECP256R1;
             case RSA -> KeyCapsuleDb.CapsuleType.RSA;
-            case MLKEM768 -> KeyCapsuleDb.CapsuleType.MLKEM768;                             // pq change
+            case MLKEM768 -> KeyCapsuleDb.CapsuleType.MLKEM768;
             default -> throw new IllegalArgumentException("Unknown capsule type: " + dtoType);
         };
     }
@@ -136,8 +155,8 @@ public class CreateKeyCapsuleApi implements KeyCapsulesApiDelegate {
             return new ExpiryTimeData(toOffsetDateTime(xExpiryTime), false);
         } else {
             return new ExpiryTimeData(
-                getCapsuleExpirationTime(configProperties.defaultExpirationDuration()),
-                false
+                    getCapsuleExpirationTime(configProperties.defaultExpirationDuration()),
+                    false
             );
         }
     }
@@ -147,8 +166,9 @@ public class CreateKeyCapsuleApi implements KeyCapsulesApiDelegate {
     }
 
     private record ExpiryTimeData(
-        OffsetDateTime xExpiryTime,
-        boolean expiryTimeAdjusted
+            OffsetDateTime xExpiryTime,
+            boolean expiryTimeAdjusted
     )  {
     }
 }
+

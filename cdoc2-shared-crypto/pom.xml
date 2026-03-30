@@ -16,7 +16,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
 
-        <bouncycastle.version>1.81</bouncycastle.version>
+        <bouncycastle.version>1.83</bouncycastle.version>
         <logback.version>1.5.18</logback.version>
     </properties>
 

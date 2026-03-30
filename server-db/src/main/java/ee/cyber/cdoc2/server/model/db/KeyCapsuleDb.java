@@ -55,6 +55,8 @@ public class KeyCapsuleDb {
     private String transactionId;
 
     /**
+     * For PQ-local design, this is:
+     * recipientId = SHA-256(recipient ML-DSA public key)
      * Depending on capsuleType:
      *  - secp384r1 base64 TLS encoded (97bytes) EC public key
      *  - DER encoded RSA public key
@@ -64,6 +66,18 @@ public class KeyCapsuleDb {
     @Size(max = 2500) // 16 K RSA public key is ~2100 bytes
     @JdbcTypeCode(SqlTypes.BINARY)
     private byte[] recipient;
+
+    /**
+     * Encoded recipient ML-DSA public key.
+     * Used by GET side to verify the receiver signature.
+     *
+     * For legacy capsule types this can remain unused for now,
+     * but for MLKEM768 it must be present.
+     */
+    @Column(nullable = true)                                            // pq change
+    @Size(max = 5000)
+    @JdbcTypeCode(SqlTypes.BINARY)
+    private byte[] recipientMldsaPublicKey;
 
     @NotNull
     @Column(nullable = false)

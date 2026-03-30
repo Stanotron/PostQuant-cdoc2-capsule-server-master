@@ -38,6 +38,8 @@ public final class CapsuleValidator {
     private static boolean validateMlKemCapsule(Capsule capsule) {                             // pq change
         return capsule.getRecipientId() != null
                 && capsule.getRecipientId().length > 0
+                && capsule.getRecipientMldsaPublicKey() != null
+                && capsule.getRecipientMldsaPublicKey().length > 0
                 && capsule.getEphemeralKeyMaterial() != null
                 && capsule.getEphemeralKeyMaterial().length > 0;
     }
