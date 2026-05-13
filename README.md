@@ -1,5 +1,7 @@
 # CDOC2 Capsule Server
 
+> **Thesis context:** This fork is used as part of an M.Sc. thesis on post-quantum adaptation of CDOC2, carried out under the supervision of Associate Professor Sedat Akleylek at the University of Tartu.
+
 CDOC2 Capsule Server for [CDOC2](https://open-eid.github.io/CDOC2/). 
 
 Implements `cdoc2-key-capsule-openapi` [OpenAPI spec](https://github.com/open-eid/cdoc2-openapi/blob/master/cdoc2-key-capsules-openapi.yaml) from [cdoc2-openapi](https://github.com/open-eid/cdoc2-openapi/)
